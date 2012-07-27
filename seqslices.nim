@@ -21,13 +21,13 @@
 ## thanks to the tipps of Araq - code completly changed, using more nimrod features 
 
 type
-  TSeqData [T] = array[0 .. 1_000_000, T]
+  TSeqData [T] = array[0 .. 1000_000_000, T]
   TGenSeqInfo {.pure.} [T] = object
     len, space: int
     data: TSeqData [T]
-  PGenSeq[T] = ref TGenSeqInfo[T]
+  PGenSeq*[T] = ptr TGenSeqInfo[T]
   PSeqData [T] = ptr TSeqData [T]
-  TSeqSlice* {.final, pure.}[T] = object
+  TSeqSlice* {.final, pure, shallow.}[T] = object
     base: PSeqData [T]
     lenX: int
     data: seq[T]
@@ -39,7 +39,7 @@ when sizeof(int) == 4:
 
 when sizeof(int) == 8:
   const  seqUniqueFlag = 1 shl 63
-    
+
 proc len* [T] (me: TSeqSlice[T]): int {.inline.} = 
   # return then len of a TSeqSlice
   return me.lenX and not seqUniqueFlag
@@ -60,35 +60,55 @@ proc all* [T] (fseq: TSeqSlice[T]): TSeqSlice[T] =
   result.lenX = result.data.len
   result.base = fseq.base
 
-proc slice* [T] (fseq: seq[T], x: TSlice[int]): TSeqSlice[T] =
-  # create a slice from a seq[T]
-  let l = fseq.len
+proc createSeqSlice* [T](newLen: int): TSeqSlice[T] =
+  result.len = newLen
+  
+proc slice* [T] (data: openarray[T], x: TSlice[int]): TSeqSlice[T] =
+  # create a slice from an openarray[T]
+  let l = data.len
   if x.a < l :
     let l2 = min(l - x.a, x.b - x.a + 1)
     newSeq(result.data, l2)
     for i in 0.. <l2:
-      result.data[i] = fseq[i + x.a]
+      result.data[i] = data[i + x.a]
     result.lenX = l2 or seqUniqueFlag
   else : # empty
     result.data= @[]
     result.lenX = seqUniqueFlag
   rebase(result, 0)
 
+proc all* [T] (data: openarray[T]): TSeqSlice[T] {.inline.} =
+  return data.slice(0..data.len)
+
 proc ofs* [T] (me: TSeqSlice[T]): int {.inline.} =
   return (cast[int](me.base) - cast[int](addr cast[PGenSeq[T]](me.data).data)) div sizeof(T)
-  
-proc slice* [T] (fseq: TSeqSlice[T], x: TSlice[int]): TSeqSlice[T] =
-  # create a shallow slice from a slice
+
+template sliceImpl() =
   shallowcopy(result.data, fseq.data)
   let l = fseq.len
   if x.a < l :
     result.lenX = min(l - x.a, x.b - x.a + 1)
     rebase(result, x.a + fseq.ofs)
     # result.base = cast[PSeqData [T]](addr cast[PGenSeq[T]](result.data).data[x.a + fseq.ofs])
+  else :
+    rebase(result, 0)
+  
+proc slice* [T] (fseq: TSeqSlice[T], x: TSlice[int]): TSeqSlice[T] =
+  # create a shallow slice from a slice
+  sliceImpl()
+      
+proc reslice* [T] (me: var TSeqSlice[T], x: TSlice[int]) = 
+  let l = me.data.len
+  if x.a < l :
+    me.lenX = min(l - x.a, x.b - x.a + 1) or (me.lenX and seqUniqueFlag)
+    rebase(me, x.a)
+  else :
+    me.lenX = (me.lenX and seqUniqueFlag)
+    rebase(me, 0)
   
 proc `[]`* [T] (fseq: TSeqSlice[T], x: TSlice[int]): TSeqSlice[T] {.inline.} =
   # same as slice
-  return fseq.slice(x)
+  sliceImpl()
   
 template checkbounds() = 
   when not defined(release) :
@@ -108,12 +128,22 @@ iterator items*[T](me: TSeqSlice[T]): T {.inline.} =
     yield base[0]
     base = cast[PSeqData [T]](addr base[1])
 
+iterator mitems*[T](me: TSeqSlice[T]): var T {.inline.} =
+  # iterate over all items of a slice
+  var base = me.base
+  let last = addr base[me.len]
+  while base < last:
+    yield base[0]
+    base = cast[PSeqData [T]](addr base[1])
+
 iterator pairs*[T](me: TSeqSlice[T]): tuple[key: int, val: T] {.inline.} =
   # iterate over all (index, item) pairs of a slice
   var i = 0
-  let len = me.len
-  while i < len:
-    yield (i, me[i])
+  var base = me.base
+  let last = addr base[me.len]
+  while base < last:
+    yield (i, base[0])
+    base = cast[PSeqData [T]](addr base[1])
     inc(i)
 
 proc makeUnique[T] (me: var TSeqSlice[T]) = 
@@ -135,22 +165,38 @@ proc `[]=`* [T] (me: var TSeqSlice[T], x: int, val : T) {.inline.} =
 
 proc setLen* [T](me: var TSeqSlice[T], newLen: Int) =
   # change the len of a slice
-  var l = me.data.len
-  if newLen > l:
-    var temp: seq[T]
-    l = l - me.ofs
-    newSeq(temp, newLen)
-    for i in 0.. < l :
-      temp[i] = me.base[i]
-    shallowCopy(me.data, temp)
+  if me.data != nil :
+    var l =  me.data.len
+    if newLen > l:
+      var temp: seq[T]
+      l = l - me.ofs
+      newSeq(temp, newLen)
+      for i in 0.. < l :
+        temp[i] = me.base[i]
+      shallowCopy(me.data, temp)
+      rebase(me, 0)
+      me.lenX = newLen or seqUniqueFlag
+    else :
+      me.lenX = newLen or (me.lenX and seqUniqueFlag)
+  else:
+    newSeq(me.data, newLen)
     rebase(me, 0)
     me.lenX = newLen or seqUniqueFlag
-  else :
-    me.lenX = newLen or (me.lenX and seqUniqueFlag)
-
+    
 proc `len=` * [T](me: var TSeqSlice[T], newLen: Int) {.inline.} =
   setLen(me, newLen)
 
+proc newSeqSlice* [T] (me: var PSeqSlice[T], data: openarray[T], x: TSlice[int]) =
+  new(me)
+  me[] = data.slice(x)
+
+proc newSeqSlice* [T] (me: var PSeqSlice[T], data: openarray[T]) =
+  newSeqSlice(me, data, 0 .. data.len)
+
+proc newSeqSlice* [T] (me: var PSeqSlice[T], data: TSeqSlice[T], x: TSlice[int]) =
+  new(me)
+  me[] = data.slice(x)
+  
 when isMainModule:
 
   proc show[T] (arr: T, info: string = "") =
@@ -167,6 +213,10 @@ when isMainModule:
 
   test.show("test: ")
 
+  var p2: PSeqSlice[int]
+  newSeqSlice(p2, test, 4..7)
+  p2[].show()
+  
   var t2= test.all()
   
   t2.show("t2: ")
@@ -187,7 +237,7 @@ when isMainModule:
   test.show("test: ")
   t2.show("t2: ")
   
-  var t3 = @[1,2,3,4,5,6,7,8,9].slice(1..100)
+  var t3 = [1,2,3,4,5,6,7,8,9].slice(1..100)
 
   t3.show("t3: ")
 
@@ -234,4 +284,13 @@ when isMainModule:
     stest.show("still alive: ")
     t3.show("me too: ")
 
-oldTest()
+  oldTest()
+
+  t4 = t3.slice(99..1000)
+  t4.show()
+  t3 = t4.slice(0..5)
+  t3.show()
+  t3.reslice(0..5)
+  t3.show()
+
+  
