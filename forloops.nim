@@ -10,36 +10,37 @@ template forLoop* (x, it: expr, loop: stmt) : stmt {.immediate.} =
 proc advance* [T](it: T): bool {.inline.} =
   discard it.next(result)
         
+type
+  TCounterUp = object
+    first, last, step, x: int
+  TCounterDown = object 
+    first, last, step, x: int
+
+proc countup(a, b: int, step = 1): TCounterUp {.inline.} =
+  result.first = a
+  result.last = b
+  result.step = step
+  result.x = a
+  
+proc next(it: var TCounterUp, proceed: var bool): int {.inline.} =
+  result = it.x
+  proceed = result <= it.last
+  if proceed :
+    inc(it.x, it.step)
+
+proc countdown(a, b: int, step = 1): TCounterDown {.inline.} =
+  result.first = a
+  result.last = b
+  result.step = step
+  result.x = a
+  
+proc next(it: var TCounterDown, proceed: var bool): int {.inline.} =
+  result = it.x
+  proceed = result >= it.last
+  if proceed :
+    dec(it.x, it.step)
+
 when isMainmodule:
-  type
-    TCounterUp = object
-      first, last, step, x: int
-    TCounterDown = object 
-      first, last, step, x: int
-
-  proc countup(a, b: int, step = 1): TCounterUp {.inline.} =
-    result.first = a
-    result.last = b
-    result.step = step
-    result.x = a
-    
-  proc next(it: var TCounterUp, proceed: var bool): int {.inline.} =
-    result = it.x
-    proceed = result <= it.last
-    if proceed :
-      inc(it.x, it.step)
-
-  proc countdown(a, b: int, step = 1): TCounterDown {.inline.} =
-    result.first = a
-    result.last = b
-    result.step = step
-    result.x = a
-    
-  proc next(it: var TCounterDown, proceed: var bool): int {.inline.} =
-    result = it.x
-    proceed = result >= it.last
-    if proceed :
-      dec(it.x, it.step)
 
   forloop(i, countup(1,10)):
     echo i
@@ -63,3 +64,5 @@ when isMainmodule:
     for i in 1 .. cLoopMax:
       cnt = cnt + i
 
+  for i in countup(1, cLoopMax):
+    cnt = cnt + i
