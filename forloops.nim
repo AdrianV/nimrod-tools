@@ -1,12 +1,25 @@
-template forLoop* (x, it: expr, loop: stmt) : stmt {.immediate.} =
-  block:
-    var iter = it
-    var proceed {.noinit.}: bool 
-    var `x` = next(iter, proceed)
-    while proceed :
-      loop
-      `x` = next(iter, proceed)
+import macros
+macro lenOfExpr(e) : int =
+  #echo lispRepr(e), " ", lispRepr(e[1]), " ", e.len
+  #echo e[1].len, " ", lispRepr(e[1])
+  return e.len
 
+template forLoop* (x, it: expr, loop: stmt) : stmt {.immediate.} =
+  bind forloops.lenOfExpr
+  block:
+    var proceed {.noinit.}: bool 
+    when lenOfExpr(it) > 0 :
+      var iter = it
+      var `x` {.inject.} = next(iter, proceed)
+      while proceed :
+        loop
+        `x` = next(iter, proceed)
+    else :
+      var `x` {.inject.} = next(it, proceed)
+      while proceed :
+        loop
+        `x` = next(it, proceed)
+    
 proc advance* [T](it: T): bool {.inline.} =
   discard it.next(result)
         
@@ -66,3 +79,8 @@ when isMainmodule:
 
   for i in countup(1, cLoopMax):
     cnt = cnt + i
+
+  
+  
+  
+  

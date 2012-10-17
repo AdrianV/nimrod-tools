@@ -58,6 +58,18 @@ proc roundDown* (x: Float, n: Int): Float =
     return trunc(xx) / sf
 
 
+proc IntPower* (Base: Float, Exponent: Int): Float = 
+  var Y = Abs(Exponent)
+  var LBase = Base
+  Result = 1.0
+  while Y > 0 : 
+    while (Y and 1) == 0 :
+      Y = Y shr 1
+      LBase = LBase * LBase
+    Dec(Y);
+    Result = Result * LBase
+  if Exponent < 0 :
+    Result = 1.0 / Result
 
 when isMainModule:
 
@@ -73,3 +85,5 @@ when isMainModule:
 
   echo 43.9.toInt
   echo 43.9.itrunc
+
+  echo IntPower(2, 4)
