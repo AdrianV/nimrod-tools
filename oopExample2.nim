@@ -3,53 +3,48 @@ import macros, oopHelper
 declClass TComponent:
   var 
     FOwner* : TComponent
-  proc getRight(self: TComponent): int = 0
+  method getRight(): int = 0
+  proc initialize* () {.inline.} = 
+    echo "init TComponent"
 
 proc create* [T:TComponent] (AOwner: TComponent): T =
-  mixin initialize, class_initialize
-  new(Result)
-  class_initialize(Result)
-  initialize(Result, AOwner)
-
-proc initialize* (me: TComponent, AOwner: TComponent) {.inline.} = # initialize* has to be declared public (with *) !!
-  echo "init TComponent"
-  me.FOwner = AOwner
-  
+  result = T.newInstance()
+  result.FOwner = AOwner
    
 declClass TControl, TComponent:
   var
     FLeft, FTop, FWidth, FHeight: int
-  proc getRight(self: TControl): int {.override.} = 
+  method getRight(): int {.override.} = 
     return self.FLeft + self.FWidth
-  proc Foo(self: TControl, a: int, b: int, c: int): int =
+  method Foo(a, b, c: int): int =
     return a + b + c
-      
-proc initialize* (me: TControl, AOwner: TComponent) {.inline.} =
-  echo "init TControl"
-  initialize(super(me), AOwner)
-  me.FLeft = 0
-  me.FTop = 0
-  me.FWidth = 100
-  me.FHeight = 50
+  proc initialize () {.inline.} =
+    echo "init TControl"
+    initialize(super(self))
+    self.FLeft = 0
+    self.FTop = 0
+    self.FWidth = 100
+    self.FHeight = 50
   
 
 declClass TWinControl, TControl:
   var
     FHandle : int
     Name* : string
-  proc Foo(self: TWinControl, a: int, b: int, c: int): int {.override.} =
+  method Foo(a: int, b: int, c: int): int {.override.} =
     return 2 * a + b - c
-    
-proc initialize* (me: TWinControl, AOwner: TComponent) {.inline.} =
-  echo "init TWinControl"
-  initialize(super(me), AOwner)
-  me.Name = "Nimrod"
-  me.FHandle = 1234
+        
+  proc initialize () {.inline.} =
+    echo "init TWinControl"
+    initialize(super(self))
+    self.Name = "Nimrod"
+    self.FHandle = 1234
 
 
 var a = create[TComponent](nil)  
 var b = create[TControl](a)
 
+#echo a.repr
 echo b.FOwner == a
 
 var c = create[TWinControl](a)
@@ -63,4 +58,4 @@ echo c.getClassName, " ",
 
 var t: TComponent = c
 
-echo t.getClassName(), " ", t.getRight()
+echo t.getClassName(), " ", t.getRight(), " ", t of TControl, " ", a of TWinControl

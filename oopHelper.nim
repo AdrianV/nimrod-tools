@@ -6,7 +6,7 @@ type
     className* : cstring
   TCustomObject* {.pure, inheritable.} = object
     class* : ptr TClassOfTCustomObject
-
+  
 template assignPointer* (rhs, lhs: expr) =
   cast[ptr Pointer](addr rhs)[] = cast[Pointer](lhs)
   
@@ -26,6 +26,22 @@ proc newInstance* (T: typedesc): T =
   new(result)
   class_initialize(result)
   initialize(result)
+
+proc isObj(x, y: ptr TClassOfTCustomObject) : ptr TClassOfTCustomObject {.noinit.} =
+  result = x
+  if result == y : return
+  result = result.base
+  while true :
+    if result == y : return 
+    if result == nil : return 
+    result = result.base
+  
+template `??` * (x: ref TCustomObject, y: typedesc): bool =
+  bind isObj
+  (not isNil(x) and not IsNil(isObj(x.class, `ClassOf y`)))
+  #(not isNil(x) and (x.class == `ClassOf y` or isObj(x.class.base, `ClassOf y`)))
+    
+template ofRewrite* {`of`(x, y)}(x: ref TCustomObject, y: typedesc): bool = x ?? y
 
 macro dump* (): stmt  {.immediate.} =
   let n = callsite()
@@ -61,25 +77,42 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
     result = newNimNode(nnkStmtList)
     let clsName = $cls.ident
     # echo("base = " & baseName & ", type = " & clsName)
-    var procs : seq[TProcDef]
-    newSeq(procs, 0)
+    var procs : seq[TProcDef] = @[]
+    var normalProcs: seq[PNimrodNode] = @[]
     var recs = newNimNode(nnkRecList)
     for n in 0 .. stm.len -1:
       let rec = stm[n]
       if rec.kind == nnkVarSection : 
         for f in 0 .. rec.len -1 : 
           recs.add(rec[f])
-      elif rec.kind == nnkProcDef :
+      elif rec.kind == nnkProcDef or rec.kind == nnkMethodDef:
         var pname = case rec[0].kind:
           of nnkIdent : $rec[0].ident
           of nnkPostfix:  $rec[0][1].ident
           else : ""
-        var over = rec[4].kind == nnkPragma and $rec[4][0].ident == "override"
-        var pdef: TProcDef = (pname, rec, over)
-        pdef.def[4] = newNimNode(nnkEmpty)
-        procs.add(pdef)
-    echo procs.repr
-    #echo("fields = " & repr(recs))
+        var over = rec[4].kind == nnkPragma and rec[4][0].ident == !"override"
+        if over or rec.kind == nnkMethodDef :
+          rec[4] = newNimNode(nnkEmpty)
+        if rec[3].len > 1 and rec[3][1][0].ident == !"self" : # has self
+          if rec[3][1][1].ident != !clsName:
+            rec[3][1][1] = newIdentNode(clsName) # force right class
+        else:
+          var params = newNimNode(nnkFormalParams).append([rec[3][0],
+            newNimNode(nnkIdentDefs).append([newIdentNode("self"), 
+              newIdentNode(clsName),
+              newNimNode(nnkEmpty)
+              ]) 
+            ])
+          for i in 1 .. rec[3].len -1 :
+            params.add(rec[3][i])
+          rec[3] = params
+          echo params.repr
+        if over or rec.kind == nnkMethodDef :
+          procs.add((pname, rec, over))
+        else :
+          normalProcs.add(rec)
+    when defined(debug):
+      echo procs.repr
 
     # start 'type' section
     var tsection = newNimNode(nnkTypeSection)
@@ -149,8 +182,9 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
         newNimNode(nnkDotExpr).append([newNimNode(nnkCall).append([newIdentNode("getClass"), p.def[3][1][0]]), newIdentNode(p.name)]))
       echo p.def[3].len, " " ,p.def[3].repr
       for i in 1 .. p.def[3].len -1 :
-        callParam.add(p.def[3][i][0])
-      echo callParam.repr
+        for k in 0 .. p.def[3][i].len -3 :
+          callParam.add(p.def[3][i][k])
+      echo "param: ",callParam.repr
       var pdef = newNimNode(nnkProcDef).append([
         p.def[0],
         newNimNode(nnkEmpty),
@@ -193,4 +227,6 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
       #echo pdef.repr
       result.add(pdef)
     result.add(parseStmt("initTClassOf" & clsName &"()"))
-    #echo result.repr
+    for p in normalProcs: result.add(p)
+    when defined(debug):
+      echo result.repr
