@@ -185,6 +185,8 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
         for k in 0 .. p.def[3][i].len -3 :
           callParam.add(p.def[3][i][k])
       echo "param: ",callParam.repr
+      
+      echo p.def[3][0].kind
       var pdef = newNimNode(nnkProcDef).append([
         p.def[0],
         newNimNode(nnkEmpty),
@@ -192,9 +194,9 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
         p.def[3], 
         newNimNode(nnkPragma).append(newIdentNode("inline")),
         newNimNode(nnkEmpty),
-        newNimNode(nnkStmtList).append(newNimNode(nnkReturnStmt).append(callParam))
+        newNimNode(nnkStmtList).append(if p.def[3][0].kind != nnkEmpty : newNimNode(nnkReturnStmt).append(callParam) else : callParam)
         ])
-      #echo "proc = ", pdef.repr
+      echo "proc = ", pdef.repr
       result.add(pdef)
     for p in procs :
       var pdef = newNimNode(nnkProcDef).append(newIdentNode("TClassOf" & clsName & "_" & p.name))
