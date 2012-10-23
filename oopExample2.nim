@@ -7,9 +7,8 @@ declClass TComponent:
   proc initialize* () {.inline.} = 
     echo "init TComponent"
 
-proc create* [T:TComponent] (AOwner: TComponent): T =
-  result = T.newInstance()
-  result.FOwner = AOwner
+  proc create(AOwner: TComponent) {.constructor.} =
+    self.FOwner = AOwner
    
 declClass TControl, TComponent:
   var
@@ -41,13 +40,13 @@ declClass TWinControl, TControl:
     self.FHandle = 1234
 
 
-var a = create[TComponent](nil)  
-var b = create[TControl](a)
+var a = TComponent.create(nil)  
+var b = TControl.create(a)
 
-#echo a.repr
+echo a.repr
 echo b.FOwner == a
 
-var c = create[TWinControl](a)
+var c = TWinControl.create(a)
 
 
 echo c.Name, " ", c.FOwner == a
