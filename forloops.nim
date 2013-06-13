@@ -1,3 +1,14 @@
+#
+#                  nimrod-tools
+#        (c) Copyright 2013 Adrian Veith
+#
+#    See the file "copying.txt", included in this
+#    distribution, for details about the copyright.
+#
+
+## This module implements a general purpose forLoop template
+## unlike iterators it can advance
+
 import macros
 macro lenOfExpr(e) : int =
   #echo lispRepr(e), " ", lispRepr(e[1]), " ", e.len
