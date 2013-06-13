@@ -167,7 +167,7 @@ proc decodeDateTime* (me: Float): DateTimeRec =
 proc toTTimeInfo* (me: Float): TTimeInfo =
   let dt: DateTimeRec = decodeDateTime(me)
   result.year = dt.date.year
-  result.month = cast[TMonth](dt.date.month)
+  result.month = cast[TMonth](dt.date.month -1)
   result.monthday = dt.date.day
   result.hour = dt.hour
   result.minute = dt.minute
@@ -201,4 +201,5 @@ when isMainModule:
 
   
   echo dt.decodeDateTime().repr
-
+  dt = encode(2013,1,1)
+  echo dt.toTTimeInfo

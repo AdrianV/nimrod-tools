@@ -1,4 +1,15 @@
-import macros
+#
+#                  nimrod-tools
+#        (c) Copyright 2013 Adrian Veith
+#
+#    See the file "copying.txt", included in this
+#    distribution, for details about the copyright.
+#
+
+## This module implements a macro for generating Object Pascal
+## like inheritance with a VMT
+
+import macros, macroHelper
 
 type
   TClassOfTCustomObject* {.pure, inheritable.} = object
@@ -47,30 +58,6 @@ template `??` * (x: ref TCustomObject, y: typedesc): bool =
     
 template ofRewrite* {`of`(x, y)}(x: ref TCustomObject, y: typedesc): bool = x ?? y
 
-macro dump* (): stmt  {.immediate.} =
-  let n = callsite()
-  echo n.lisprepr
-  
-proc append(father, child: PNimrodNode): PNimrodNode  {.compiletime.} =
-  father.add(child)
-  return father
-
-proc append(father: PNimrodNode, children: varargs[PNimrodNode]): PNimrodNode  {.compiletime.} =
-  father.add(children)
-  return father
-
-proc insert(father: PNimrodNode, indx: int, children: varargs[PNimrodNode]): PNimrodNode  {.compiletime.} =
-  if indx >= father.len:
-    father.add(children)
-  else :
-    var save: seq[PNimrodNode] = @[]
-    for i in indx .. father.len - 1:
-      save.add(father[i])
-    father.del(indx, father.len - indx)
-    father.add(children)
-    for i in 0.. save.len-1 :
-      father.add(save[i])
-  return father
   
 proc newPostfixIdent(name: string): PNimrodNode {.compiletime.} =
   result = newNimNode(nnkPostfix).append([
@@ -99,7 +86,7 @@ proc makeConstructor(node: PNimrodNode, clsName: string): PNimrodNode {.compilet
   result[2] = newNimNode(nnkGenericParams).append(newNimNode(nnkIdentDefs).append([newIdentNode("T"), newIdentNode(clsName), newNimNode(nnkEmpty)]))
   result[3][0] = newIdentNode("T")
   result[3][1][1].ident = !"T"
-  result[4][0].ident = !"discardable" 
+  result[4] = newNimNode(nnkPragma).append(newIdentNode("discardable")) 
   
   forAll(result[6], changeSelfToResult)
   var stm = newNimNode(nnkStmtList)
@@ -115,6 +102,8 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
         def: PNimrodNode
         override: Bool
         destructor: Bool
+        constructor: Bool
+        condef: PnimrodNode
     let clsbase = callsite()
     if cls.kind not_in {nnkIdent} : error "Identifier expected instead of " & cls.repr
     #expectKind(cls, nnkIdent)
@@ -141,8 +130,9 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
           of nnkPostfix:  $rec[0][1].ident
           else : ""
         var over = (rec[4].kind == nnkPragma and rec[4][0].ident == !"override") #or !pname == !"destroy"
+        var isConstructor = rec[4].kind == nnkPragma and rec[4][0].ident == !"constructor"
         var isDestructor = !pname == !"destroy"
-        if over or rec.kind == nnkMethodDef or isDestructor:
+        if not isConstructor and (over or rec.kind == nnkMethodDef or isDestructor):
           rec[4] = newNimNode(nnkEmpty)
         if rec[3].len > 1 and rec[3][1][0].ident == !"self" : # has self
           if rec[3][1][1].ident != !clsName:
@@ -158,11 +148,16 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
             params.add(rec[3][i])
           rec[3] = params
           #echo params.repr
-        var isConstructor = rec[4].kind == nnkPragma and rec[4][0].ident == !"constructor"
+        echo "here: ", isConstructor, " ", rec[0].repr, " ", rec[4].lispRepr
+        #if rec[0].ident == !"create" :
+        #  echo rec.lispRepr
+        var conDef: PNimrodNode  
         if  isConstructor: # add constructor semantics
+          conDef = rec.copyNimTree()
           rec = makeConstructor(rec, clsName)
+          echo rec.repr
         if over or rec.kind == nnkMethodDef or isDestructor:
-          procs.add((pname, rec, over, isDestructor))
+          procs.add((pname, rec, over, isDestructor, isConstructor, conDef))
         else :
           normalProcs.add(rec)
           if isConstructor :
@@ -212,10 +207,11 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
       var recList = newNimNode(nnkRecList)
       if procs.len > 0:
         for p in procs:
-          if p.override : continue
+          if p.override or p.destructor : continue
+          var rec = if p.constructor : p.condef else : p.def
           recList.add(newNimNode(nnkIdentDefs).append([
             newPostfixIdent(p.name),
-            newNimNode(nnkProcTy).append([p.def[3], newNimNode(nnkPragma).append(newIdentNode("nimcall"))]),
+            newNimNode(nnkProcTy).append([rec[3], newNimNode(nnkPragma).append(newIdentNode("nimcall"))]),
             newNimNode(nnkEmpty)
             ]))
       else :
@@ -253,7 +249,7 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
     result.add(parseStmt("var ClassOf" & clsName & "* : ptr TClassOf" & clsName))
     result.add(parseStmt("template getClass* (self: " & clsName & "): ptr TClassOf" & clsName & " =  cast[ptr TClassOf" & clsName & "](getClassPtr(self))"))
     if baseName != "" :
-      result.add( parseStmt("template super(self:" & clsName & "):" & baseName & " = self" ))
+      result.add( parseStmt("proc super(self:" & clsName & "):" & baseName & " {.inline.} = self" ))
       result.add( parseStmt("template Inherited* (self: " & clsName & "): ptr TClassOf" & baseName & " = ClassOf" & baseName))
     
     # adding proc headers first
@@ -278,38 +274,47 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
         #echo pheader.repr
     for p in procs :
       if p.destructor : continue
+      var rec = if p.constructor : p.condef else : p.def
+      if p.constructor : echo "rec: ", rec.repr
       var callParam = newNimNode(nnkCall).append(
-        newNimNode(nnkDotExpr).append([newNimNode(nnkCall).append([newIdentNode("getClass"), p.def[3][1][0]]), newIdentNode(p.name)]))
+        newNimNode(nnkDotExpr).append([newNimNode(nnkCall).append([newIdentNode("getClass"), rec[3][1][0]]), newIdentNode(p.name)]))
       #echo p.def[3].len, " " ,p.def[3].repr
-      for i in 1 .. p.def[3].len -1 :
-        for k in 0 .. p.def[3][i].len -3 :
-          callParam.add(p.def[3][i][k])
+      for i in 1 .. rec[3].len -1 :
+        for k in 0 .. rec[3][i].len -3 :
+          callParam.add(rec[3][i][k])
       #echo "param: ",callParam.repr
       
       #echo p.def[3][0].kind
       var pdef = newNimNode(nnkProcDef).append([
-        p.def[0],
+        rec[0],
         newNimNode(nnkEmpty),
         newNimNode(nnkEmpty),
-        p.def[3], 
+        rec[3], 
         newNimNode(nnkPragma).append(newIdentNode("inline") ) ,
         newNimNode(nnkEmpty),
-        newNimNode(nnkStmtList).append(if p.def[3][0].kind != nnkEmpty : newNimNode(nnkReturnStmt).append(callParam) else : callParam)
+        newNimNode(nnkStmtList).append(if rec[3][0].kind != nnkEmpty : newNimNode(nnkReturnStmt).append(callParam) else : callParam)
         ])
       #echo "proc = ", pdef.repr
       result.add(pdef)
     var sdestroy = "TClassOf" & clsName & "_destroy"
-    result.add(parseStmt("template class_initialize* (self: "&clsName&") =\n  when compiles("&sdestroy&"(self)): new(self, "&sdestroy&" ) else : new(self)\n  self.class = cast[ptr TClassOf"&clsName&"](ClassOf"&clsName&")"))
+    result.add(parseStmt("template class_initialize* (self: "&clsName&") =\n  when compiles(destroy(self)): new(self, "&sdestroy&" ) else : new(self)\n  self.class = cast[ptr TClassOf"&clsName&"](ClassOf"&clsName&")"))
     for i in 0 .. normalProcs.len -1 :
       #echo normalProcs[i].repr
       result.add(normalProcs[i])
     for p in procs :
-      var sname = "TClassOf" & clsName & "_" & p.name
-      var pdef = newNimNode(nnkProcDef).append(if !p.name != !"destroy" : newIdentNode(sname) else: newPostfixIdent(sname))
+      var sname = if not p.destructor : "TClassOf" & clsName & "_" & p.name else : p.name
+      var pdef = newNimNode(nnkProcDef).append(if not p.destructor : newIdentNode(sname) else : newPostfixIdent(sname) )
       for d in 1 .. p.def.len -1 :
         pdef.add(p.def[d])
-      #echo pdef.repr
+      if !p.name == !"destroy" :
+        pdef[4] = newNimNode(nnkPragma).append(newIdentNode("inline"))
+        pdef[6].add(parseStmt("when compiles(destroy(super(self))):\n  destroy(super(self))"))
+        #echo "here: ", pdef[6].lisprepr
+      else :
+        pdef[4] = newNimNode(nnkPragma).append(newIdentNode("nimcall"))
+      
       result.add(pdef)
+    result.add(parseStmt("proc " &sdestroy&"*(self: "&clsName&") {.nimcall.} =\n  when compiles(destroy(self)): destroy(self)"))
     block:
       var stm = newNimNode(nnkStmtList)
       var pdef = newNimNode(nnkProcDef).append([
@@ -331,7 +336,7 @@ macro declClass* (cls, base : expr) : stmt {.immediate.} =
           ])
       stm.add(parseStmt("ClassOf"&clsName&".className = \""& clsName & "\""))
       for p in procs:
-        stm.add(parseStmt("assignPointer(ClassOf"&clsName&"."&p.name&", TClassOf"&clsName&"_"&p.name&")"))  
+        if not p.destructor : stm.add(parseStmt("assignPointer(ClassOf"&clsName&"."&p.name&", TClassOf"&clsName&"_"&p.name&(if p.constructor : "["&clsName&"]" else :"")&")"))  
       #echo pdef.repr
       result.add(pdef)
     result.add(parseStmt("initTClassOf" & clsName &"()"))
