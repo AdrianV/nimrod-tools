@@ -16,15 +16,16 @@ type
 converter toIString* (x: string): istring = istring(x)
 
 
-proc `$` * (x: istring): string  {.borrow.}
+proc `$` * (x: istring): istring  {.borrow.}
 proc `&` * (x: istring, y: char): istring  {.borrow.}
-proc `&` * (x: char, y: char): istring  {.borrow.}
+#proc `&` * (x: char, y: char): string  {.borrow.}
 proc `&` * (x, y: istring): istring  {.borrow.}
 proc `&` * (x: char, y: istring): istring  {.borrow.}
 
-proc add*(x: var istring, y: char)  {.borrow.}
-proc add*(x: var istring, y: istring)  {.borrow.}
 proc `&=`* (x: var istring, y: istring)  {.borrow.}
+template `&=`* (x: var istring, y: char)  = x = x & y
+template add*(x: var istring, y: char) = x &= y
+proc add*(x: var istring, y: istring)  {.borrow.}
   
 template `<` *(x, y: istring): bool = cmpIgnoreCase(string(x), string(y)) < 0 
 template `<=` *(x, y: istring): bool = cmpIgnoreCase(string(x), string(y)) <= 0 
@@ -46,4 +47,5 @@ when isMainModule :
 
   s1 = "ABC"
   echo s1, " == ", s2, ": ", s1 == s2
+  echo s1 & "a" , " == ", s2 & "A" , ": ", s1 & "a" == s2 & "A"
     

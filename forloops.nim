@@ -15,7 +15,7 @@ macro lenOfExpr(e) : int =
   #echo e[1].len, " ", lispRepr(e[1])
   return e.len
 
-template forLoop* (x, it: expr, loop: stmt) : stmt {.immediate.} =
+template forLoop* (x, it: expr, loop: stmt) : stmt {.immediate, dirty.} =
   bind forloops.lenOfExpr
   block:
     var proceed {.noinit.}: bool 

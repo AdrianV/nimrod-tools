@@ -22,7 +22,7 @@ type
     keys: PBTree[istring, TKeyInfo]
   TIniFile* = ref object
     sections: seq[TSecInfo]
-    keys: PBTree[istring, int]
+    Fkeys: PBTree[istring, int]
     space: tuple[indent, before, after: int]
     filename* : string
     
@@ -31,7 +31,7 @@ proc Index(it:ref TItem[istring, int]): int {.inline.} = it.value - 1
 proc setIndex(it:ref TItem[istring, int], value: int) {.inline.} = 
   it.value = value + 1 
     
-proc clean(o: var TKeyInfo) {.inline.} = nil
+proc clean(o: var TKeyInfo) {.inline.} = discard
     
 proc setFormat* (self: TIniFile, space: tuple[indent, before, after: int]): TIniFile {.discardable.} =
   self.space = space
@@ -56,9 +56,9 @@ proc lineAdd(self: TIniFile, line: string, xSec: var int) =
       sName = line.substr(1, p-1)
     else : 
       isSection = false
-  template addSection() =
+  template addSection() {.dirty.} =
     #sName = sName.toLower
-    var it = self.keys.findOrInsert(sName)
+    var it = findOrInsert(self.Fkeys, sName)
     xSec = it.index
     if xSec < 0 :
       self.sections.add((name: sName, lines: @[], keys: nil))
@@ -95,7 +95,7 @@ proc fromFile* (name: string): TIniFile =
     
     
 proc readKey* (self: TIniFile, sec, key: string, default: string = ""): string =
-  let it = self.keys.Find(sec.istring)
+  let it = self.Fkeys.Find(sec.istring)
   if not isNil(it) :
     let idx = it.index
     let itk = self.sections[idx].keys.Find(key.istring)
@@ -128,14 +128,14 @@ proc readEnum* [T: enum] (self: TIniFile, sec, key: string, default: T): T =
   
 proc readSection * (self: TIniFile, sec: string, withComments: bool = false): seq[string] =
   result = @[]
-  let it = self.keys.find(sec.istring)
+  let it = self.Fkeys.find(sec.istring)
   if not isNil(it) :
     for line in self.sections[it.index].lines :
       if not isNil(line) and (withComments or not (line[0] in {';', '#'})) : result.add(line)
       
 proc readSectionKeys * (self: TIniFile, sec: string): seq[string] =
   var res: seq[string] = @[]
-  let it = self.keys.find(sec.istring)
+  let it = self.Fkeys.find(sec.istring)
   if not isNil(it) :
     self.sections[it.index].keys.forEachKey proc(k: istring) = res.add(k.string)
   return res
@@ -147,7 +147,7 @@ proc readSections * (self: TIniFile): seq[string] =
         
 proc forceSection(self: TIniFile, sec: string): int {.inline.} =
   #let sName = sec.tolower
-  let it = self.keys.findOrInsert(sec)
+  let it = self.Fkeys.findOrInsert(sec)
   result = it.index
   if result < 0 :
     self.sections.add((name: sec, lines: @[], keys: nil))
@@ -177,14 +177,14 @@ proc writeSection * (self: TIniFile, sec: string, data: openarray[string], prese
   for line in finalComments : 
     self.sections[idx].lines.add(line)
      
-proc hasSection* (self: TIniFile, sec: string): bool = not IsNil(self.keys.Find(sec.istring))
+proc hasSection* (self: TIniFile, sec: string): bool = not IsNil(self.Fkeys.Find(sec.istring))
 
 proc hasKey* (self: TIniFile, sec, key: string): bool =
-  let it = self.keys.Find(sec.istring)
+  let it = self.Fkeys.Find(sec.istring)
   return not isNil(it) and not isNil(self.sections[it.index].keys.Find(key.istring))
 
 proc eraseKey* (self: TIniFile, sec, key: string): bool {.discardable.} =
-  let it = self.keys.Find(sec.istring)
+  let it = self.Fkeys.Find(sec.istring)
   if not isNil(it) :
     let idx = it.index
     let itk = self.sections[idx].keys.Find(key.istring)
@@ -195,7 +195,7 @@ proc eraseKey* (self: TIniFile, sec, key: string): bool {.discardable.} =
   return false
 
 proc eraseSection * (self: TIniFile, sec: string): bool {.discardable.} =
-  let it = self.keys.DeleteSlot(sec)
+  let it = self.Fkeys.DeleteSlot(sec)
   result = not isNil(it) 
   if result :
     var w = addr(self.sections[it.index])
@@ -235,7 +235,7 @@ proc writeEnum* [T: enum] (self: TIniFile, sec, key: string, value: T) =
   self.writeKey(sec, key, $value)
       
 
-template exportImpl(self: TIniFile, onNewLine: expr): stmt {.immediate.} =
+template exportImpl(self: TIniFile, onNewLine: expr): stmt {.immediate, dirty.} =
   for s in self.sections :
     if isNil(s.name) : continue
     onNewLine("[" & s.name & "]")
@@ -269,7 +269,7 @@ iterator allSections* (self: TIniFile): string {.inline.} =
   for sec in self.sections : yield sec.name
     
 iterator allKeys* (self: TIniFile, sec: string): string =
-  let it = self.keys.find(sec.istring)
+  let it = self.Fkeys.find(sec.istring)
   if not isNil(it) :
     forLoop k, self.sections[it.index].keys.keys() :
       yield k.string

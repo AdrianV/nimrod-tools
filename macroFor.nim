@@ -16,20 +16,22 @@ proc isEqual(n1, n2: PNimrodNode): bool {.compiletime.} =
     return true
   return false
 
-proc replace(n: PNimrodNode, pat: TPattern): PNimrodNode {.compiletime.} =
+proc replace(n: var PNimrodNode, pat: TPattern): Bool {.compiletime.} =
   if isEqual(n, pat.patNode):
-    # echo n.repr, " == ", pat.patNode.repr
-    return pat.resNode
+    n = pat.resNode
+    return true
   
-proc forAll(node: PNimrodNode, pat: TPattern, call: proc(n: PNimrodNode, pat:TPattern): PNimrodNode ): PNimrodNode {.compiletime.} =
+  
+proc forAll(node: PNimrodNode, pat: TPattern, call: proc(n: var PNimrodNode, pat:TPattern): Bool ): PNimrodNode {.compiletime.} =
   result = node
   for i in 0 .. result.len -1:
-    if result[i] != nil :
-      var nres = call(result[i], pat) 
-      if nres != nil:
-        result[i] = nres
+    var ri = result[i]
+    if ri != nil :
+      var changed = call(ri, pat)
+      if changed :
+        result[i] = ri
       else : 
-        result[i] = forAll(result[i], pat, call)
+        result[i] = forAll(ri, pat, call)
       
 macro macFor* (x:stmt): stmt {.immediate.} =
   result = newNimNode(nnkStmtList)
@@ -61,10 +63,13 @@ macro macFor* (x:stmt): stmt {.immediate.} =
     for p in patterns:
       var pat = p.patNode
       var res = p.resNode[i mod p.resNode.len]
-      # echo pat.repr, "-> ", res.repr
+      echo pat.repr, "-> ", res.repr
+      #echo "in ", stm1.treerepr
       stm1 = stm1.forAll((pat, res), replace)
-    echo stm1.repr
+      #echo "out ", stm1.treerepr
+    #echo "here ", stm1.repr
     result.add(stm1)
+  #echo result.repr
 
 when isMainModule:
   var 

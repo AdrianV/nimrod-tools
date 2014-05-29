@@ -176,7 +176,7 @@ proc DeleteItem[T,D] (n: PBtree[T,D], x: Int): PBtree[T,D] {.inline.} =
     of cLen3 : setLen(n.slots, cLen3)
     of cLenCenter : setLen(n.slots, cLenCenter)
     of cLen4 : setLen(n.slots, cLen4)
-    else: nil
+    else: discard
     Result = n
     
   else :
@@ -246,12 +246,12 @@ proc Delete* [T,D] (ANode: var PBtree[T,D], key: T) =
   var Path: array[0..30, RPath[T,D]]
   var h = 0
   var node = ANode
-  template doResult(res: expr) {.immediate.} = nil
+  template doResult(res: expr) {.immediate.} = discard
   findImpl (node, key, doDelFound, doDelPath)
   # if not isNil(it) : result = it.value
   
 proc find* [T,D] (n: PBtree[T,D], key: T): ref TItem[T,D] =
-  template doPath(n, x: expr) {.immediate.} = nil
+  template doPath(n, x: expr) {.immediate.} = discard
   template doFound(n, x: expr) {.immediate.} = 
     return n.slots[x]
   var node = n
@@ -340,7 +340,7 @@ proc findOrInsert* [T,D](ANode: var PBTree[T,D], AKey: T): ref TItem[T,D] =
     of cLen3: setLen(APath.Nd.slots, cLenCenter)
     of cLenCenter: setLen(APath.Nd.slots, cLen4)
     of cLen4: setLen(APath.Nd.slots, cLenMax)
-    else: nil
+    else: discard
     arrIns(APath.Nd.slots, x, APath.Nd.Count.int - 1)
     setSlot(APath.Nd.slots[x], AItem, ANode)
   template SplitPage (n, left: PBtree[T,D], xi: Int, AItem: ref TITem[T,D]) {.immediate.} =
@@ -669,7 +669,7 @@ when isMainModule:
       bench():      
         for i in 1..1_000_000:
           it1 = root.Find($i)
-          if it1 != nil: nil#echo it1.Value
+          if not isNil(it1): discard   #echo it1.Value
           else: echo "not found ", i
       root.Delete("test")
     var cnt = 0
@@ -694,7 +694,7 @@ when isMainModule:
     bench():      
       for i in 1..1000_000:
         it1 = root.Find(i)
-        if it1 != nil: nil#echo it1.Value
+        if not isNil(it1): discard  #echo it1.Value
         else: echo "not found ", i
 
     var cnt = 0

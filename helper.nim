@@ -17,8 +17,10 @@
 import math
 
 
-proc itrunc* (v: float): int {.inline, noStackFrame.} = 
-  {.emit: """ return (int)(v);  """ .}
+proc itrunc* (v: float): int {.inline.} = 
+     {.emit: """
+     return (int)(`v`);  
+      """.}
 
 proc frac* (value: Float): Float {.inline.} =
   return value - trunc(value)

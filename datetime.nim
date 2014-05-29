@@ -86,7 +86,7 @@ proc decode* (me: Float): DateRec  =
       T -= D400
       Y += 400
     var I = T div D100
-    var D = T mod D100
+    var D: int = T mod D100
     if (I == 4) :
       dec(I)
       D += D100

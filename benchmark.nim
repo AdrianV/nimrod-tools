@@ -42,5 +42,6 @@ template bench* (call: stmt): stmt =
 
 template bench* (msg: expr, call: stmt): stmt =
   stdout.write msg & ": "
+  stdout.flushFile()
   bench():
     call
